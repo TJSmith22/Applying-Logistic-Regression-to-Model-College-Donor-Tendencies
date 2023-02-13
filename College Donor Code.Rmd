@@ -1,0 +1,197 @@
+---
+title: "The Classifacation of A Binary Target Variable Using a Binomial Generalized Linear Model"
+author: "TJ Smith"
+output:
+  word_document: default
+  html_document: default
+---
+
+# Load in needed packages
+```{r,include=FALSE}
+library(tidyverse)
+library(GLMsData)
+library(MASS)
+library(gridExtra)
+library(statmod)
+```
+
+#Import Dataset
+```{r,include=FALSE}
+co <- read.csv("college.csv")
+```
+
+# Creating exploratory data plot to obersve the relationship between the variable Outstate vs the target variable
+```{r,co-exploratory-plot-1}
+pdc <- ggplot(data = co,
+            mapping = aes(x = Outstate,
+                          y = Target))
+pdc <- pdc + geom_jitter(height = 0.02, pch = 1)
+pdc <- pdc + geom_smooth(se=FALSE)
+pdc <- pdc + labs(x = "Out of State Tuiton Cost",
+              y = "Target Variable")
+pdc
+```
+
+# Getting a summary of the target variable
+```{r}
+summary(co$Target)
+```
+
+# Creating the full model (using all variables)
+```{r,include=FALSE}
+fullmodel <- glm(Target ~ Apps+Accept+Enroll+Top10perc+Top25perc+F.Undergrad+P.Undergrad+Outstate+Room.Board+Books+Personal+PhD+Terminal+S.F.Ratio+perc.alumni+Expend+Grad.Rate,data=co,family=binomial)
+summary(fullmodel)
+```
+
+# Using Chisq test to weed out some non-important variables
+```{r,include=FALSE}
+anova(fullmodel,test="Chisq",data=co)
+```
+
+# The next 4 chunks of code include possible models. 
+#Used the Wald test to weed out variables to improve model.
+```{r,include=FALSE}
+adjmodel1 <- glm(Target ~ Apps+Accept+Enroll+Top10perc+Top25perc+F.Undergrad+Outstate+PhD+perc.alumni,data=co,family=binomial)
+summary(adjmodel1)
+```
+
+```{r,include=FALSE}
+adjmodel2 <- glm(Target ~ Apps+Accept+Enroll+Top10perc+Top25perc+F.Undergrad+P.Undergrad+Room.Board+Books+Personal+Terminal+S.F.Ratio+Expend+Grad.Rate,data=co,family=binomial)
+summary(adjmodel2)
+```
+
+```{r,include=FALSE}
+adjmodel3 <- glm(Target ~ Outstate+PhD+perc.alumni+Apps+Enroll+F.Undergrad+Room.Board+Terminal+Expend+Grad.Rate,data=co,family=binomial)
+summary(adjmodel3)
+```
+
+```{r,include=FALSE}
+adjmodel4 <- glm(Target ~ Outstate+PhD+perc.alumni+Apps+F.Undergrad+Expend,data=co,family=binomial)
+summary(adjmodel4)
+```
+
+# Final model
+```{r}
+adjmodel5 <- glm(Target ~ Outstate+PhD+perc.alumni+Apps+Expend,data=co,family=binomial)
+summary(adjmodel5)
+```
+
+The equation for the final model:
+$$
+logit(mu) = -1.297 + 0.00072*Outstate + 0.0864*perc.alumni + 0.00027*Expend - 0.0835*phd - 0.00053*Apps
+$$
+# Calculating necesarry columns for model analysis
+```{r,include=FALSE}
+co$adjmodel5.mu <- predict(adjmodel5,type="response")
+co$adjmodel5.eta <- predict(adjmodel5,type="link")
+co$adjmodel5.Prediction <- ifelse(co$adjmodel5.mu>0.5,1,0)
+co$adjmodel5.rQ1 <- qresid(adjmodel5)
+co$adjmodel5.rQ2 <- qresid(adjmodel5)
+co$adjmodel5.wr <- co$adjmodel5.eta + resid(adjmodel5,type="working")
+```
+
+# Out-of-model plot analysis
+```{r}
+pom <- ggplot(data = co,
+            mapping = aes(x = Room.Board,
+                          y = adjmodel5.rQ1))
+pom <- pom + geom_point() + geom_smooth(se = TRUE)
+pom <- pom + labs(x = "Cost of Room and Board",
+              y = "Quantile Residuals",
+              title = "Model")
+
+qom <- ggplot(data = co,
+            mapping = aes(x = Room.Board,
+                          y =adjmodel5.rQ2))
+qom <- qom + geom_point() + geom_smooth(se = TRUE)
+qom <- qom + labs(x = "Cost of Room and Board",
+              y = "Quantile Residuals",
+              title = "Model")
+grid.arrange(pom, qom, nrow = 1)
+```
+
+# Function Family test (Is binomial the right choice?)
+```{r}
+pt <- ggplot(data = co,
+            mapping = aes(sample = adjmodel5.rQ1))
+pt <- pt + geom_qq(pch = 1) + geom_qq_line(color = "blue")
+pt <- pt + labs(x = "Theoretical Quantiles",
+              y = "Sample Quantiles")
+
+qt <- ggplot(data = co,
+            mapping = aes(sample = adjmodel5.rQ2))
+qt <- qt + geom_qq(pch = 1) + geom_qq_line(color = "blue")
+qt <- qt + labs(x = "Theoretical Quantiles",
+              y = "Sample Quantiles")
+grid.arrange(pt, qt, nrow = 1)
+```
+
+# Link function accuracy test
+```{r}
+p <- ggplot(data = co,
+            mapping = aes(x = adjmodel5.eta,
+                          y = adjmodel5.wr))
+p <- p + geom_point() + geom_smooth(se = TRUE)+ylim(-20,20)
+p <- p + labs(x = "Linear Predictor",
+              y = "Working Residuals",
+              title = "Model")
+p
+```
+
+# Overall model accuracy predictor
+```{r}
+p <- ggplot(data = co,
+            mapping = aes(x = adjmodel5.mu,
+                          y = adjmodel5.rQ1))
+p <- p + geom_point() + geom_smooth(se = TRUE)
+p <- p + labs(x = "Fitted Values",
+              y = "Quantile Residuals",
+              title = "Model")
+
+q <- ggplot(data = co,
+            mapping = aes(x = adjmodel5.mu,
+                          y = adjmodel5.rQ2))
+q <- q + geom_point() + geom_smooth(se = TRUE)
+q <- q + labs(x = "Fitted Values",
+              y = "Quantile Residuals",
+              title = "Model")
+grid.arrange(p,q, nrow = 1)
+```
+
+# Confusion matrix calculation
+# Acuraccy, Sensitivity, and Specificity percentages
+```{r}
+(confmat<- xtabs( ~ Target + adjmodel5.Prediction,
+       data = co))
+```
+  
+$$
+  \frac{119+346}{119 + 18 + 17 + 346} = \frac{465}{500} = 0.93
+$$
+$$
+  \frac{346}{18 + 346} = \frac{346}{364} = 0.9505
+$$
+
+$$
+  \frac{119}{119 + 17} = \frac{119}{136} = 0.875
+$$
+# Function to apply model to new data (Predictive tool)
+```{r,co-score-function}
+score <- function(dta) {
+  Outstate <- co$Outstate
+  phd <- co$PhD
+  perc.alumni <- co$perc.alumni
+  Apps <- co$Apps
+  Expend <- co$Expend
+  eta <- -1.2978349723 + 0.0007242341*Outstate + 0.0864645073*perc.alumni + 0.0002704450*Expend - 0.0835232929*phd - 0.0005358043*Apps
+  mu <- 1/(1+exp(-eta))
+  co$Prediction <- ifelse(mu>0.5 ,1,0)
+  return(co)
+}
+```
+
+# Applying function to our dataset
+```{r}
+tmps <- score(co)
+tmps
+```
